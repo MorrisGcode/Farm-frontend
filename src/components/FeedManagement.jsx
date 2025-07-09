@@ -1,51 +1,63 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios'; // Import Axios
 
 // Base URL for your Django API (adjust if your Django server is on a different port/domain)
 const DJANGO_API_BASE_URL = 'http://127.0.0.1:8000/api/'; // Adjust this if your Django server is different
 
-// Main React App Component for Feed Type Management (now named FeedManagement)
-const FeedManagement = () => { // Renamed from App to FeedManagement
+// Main React App Component for Feed Type Management
+const FeedManagement = () => {
     const [feedTypes, setFeedTypes] = useState([]);
     const [editingFeedType, setEditingFeedType] = useState(null); // State to hold the feed type being edited
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [showFeedTypeModal, setShowFeedTypeModal] = useState(false); // State for modal visibility
+
+    // Helper to get authentication headers for Axios requests
+    const getAuthHeaders = () => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            // Handle cases where token is missing (e.g., redirect to login)
+            console.warn("No authentication token found. User might not be logged in.");
+            return {}; // Return empty headers if no token, allowing API to respond with 401
+        }
+        return {
+            'Authorization': `Bearer ${token}`
+        };
+    };
+
+    // Fetch feed types
+    const fetchFeedTypes = useCallback(async () => {
+        setLoading(true);
+        setError(null); // Clear previous errors
+        try {
+            const config = {
+                headers: getAuthHeaders() 
+            };
+            const response = await axios.get(`${DJANGO_API_BASE_URL}feedtypes/`, config); // <-- Pass the config here
+            setFeedTypes(response.data);
+        } catch (err) {
+            console.error("Failed to fetch feed types:", err.response ? err.response.data : err.message);
+            // Provide more specific error message from backend if available
+            setError(`Failed to load feed types: ${err.response?.data?.detail || err.message}. Please check if the Django backend is running, accessible, and you are logged in.`);
+        } finally {
+            setLoading(false);
+        }
+    }, []); // Empty dependency array means this function is created once
 
     // Fetch feed types on component mount
     useEffect(() => {
         fetchFeedTypes();
-    }, []);
-
-    const fetchFeedTypes = async () => {
-        setLoading(true);
-        setError(null); // Clear previous errors
-        try {
-            // Note: Your BreedList example uses localStorage.getItem('token') for Authorization.
-            // If your FeedType API also requires authentication, you'll need to pass the token.
-            // For now, assuming it's publicly accessible as per Django `AllowAny` permission.
-            const response = await axios.get(`${DJANGO_API_BASE_URL}feedtypes/`);
-            setFeedTypes(response.data);
-        } catch (err) {
-            console.error("Failed to fetch feed types:", err);
-            // Check for specific error messages from Django if available
-            setError(`Failed to load feed types. Please check if the Django backend is running and accessible at ${DJANGO_API_BASE_URL}.`);
-        } finally {
-            setLoading(false);
-        }
-    };
+    }, [fetchFeedTypes]); 
 
     // Handlers for CRUD operations on Feed Types using Axios
-
     const handleAddOrUpdateFeedType = async (feedTypeData) => {
         setLoading(true);
         setError(null);
         try {
-            const token = localStorage.getItem('token'); // Assuming token might be needed as in BreedList example
             const config = {
                 headers: {
                     'Content-Type': 'application/json',
-                    // Conditionally add Authorization header if token exists
-                    ...(token && { 'Authorization': `Bearer ${token}` })
+                    ...getAuthHeaders() // Merge with auth headers
                 }
             };
 
@@ -60,10 +72,11 @@ const FeedManagement = () => { // Renamed from App to FeedManagement
 
             // After successful operation, re-fetch all data to ensure consistency
             fetchFeedTypes();
-            setEditingFeedType(null); // Clear editing state after successful add/update
+            setEditingFeedType(null); 
+            setShowFeedTypeModal(false); 
         } catch (err) {
             console.error("Failed to save feed type:", err.response ? err.response.data : err.message);
-            setError(`Failed to save feed type: ${err.response?.data?.detail || err.message}`);
+            setError(`Failed to save feed type: ${err.response?.data?.detail || err.message}.`);
         } finally {
             setLoading(false);
         }
@@ -73,12 +86,8 @@ const FeedManagement = () => { // Renamed from App to FeedManagement
         setLoading(true);
         setError(null);
         try {
-            const token = localStorage.getItem('token');
             const config = {
-                headers: {
-                    // Conditionally add Authorization header if token exists
-                    ...(token && { 'Authorization': `Bearer ${token}` })
-                }
+                headers: getAuthHeaders() // Use auth headers
             };
             await axios.delete(`${DJANGO_API_BASE_URL}feedtypes/${id}/`, config);
 
@@ -86,7 +95,7 @@ const FeedManagement = () => { // Renamed from App to FeedManagement
             setFeedTypes(feedTypes.filter(feedType => feedType.id !== id));
         } catch (err) {
             console.error("Failed to delete feed type:", err.response ? err.response.data : err.message);
-            setError(`Failed to delete feed type: ${err.response?.data?.detail || err.message}`);
+            setError(`Failed to delete feed type: ${err.response?.data?.detail || err.message}.`);
         } finally {
             setLoading(false);
         }
@@ -94,10 +103,12 @@ const FeedManagement = () => { // Renamed from App to FeedManagement
 
     const startEditing = (feedType) => {
         setEditingFeedType(feedType);
+        setShowFeedTypeModal(true); // Open modal for editing
     };
 
-    const cancelEditing = () => {
-        setEditingFeedType(null);
+    const handleCloseModal = () => {
+        setEditingFeedType(null); // Clear editing state
+        setShowFeedTypeModal(false); // Close the modal
     };
 
     // Display loading or error messages
@@ -124,16 +135,29 @@ const FeedManagement = () => { // Renamed from App to FeedManagement
                     Feed Type and Nutrition Management
                 </h1>
 
-                {/* Feed Type Form */}
-                <FeedTypeForm
-                    onSubmit={handleAddOrUpdateFeedType}
-                    editingFeedType={editingFeedType}
-                    onCancelEdit={cancelEditing}
-                />
+                <div className="flex justify-center mb-6">
+                    <button
+                        onClick={() => setShowFeedTypeModal(true)}
+                        className="px-6 py-3 border border-transparent rounded-md shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
+                    >
+                        Add New Feed
+                    </button>
+                </div>
+
+                {/* Feed Type Form Modal */}
+                {showFeedTypeModal && (
+                    <Modal onClose={handleCloseModal}>
+                        <FeedTypeForm
+                            onSubmit={handleAddOrUpdateFeedType}
+                            editingFeedType={editingFeedType}
+                            onCancelEdit={handleCloseModal} // Use handleCloseModal for cancel
+                        />
+                    </Modal>
+                )}
 
                 <hr className="my-8 border-t-2 border-gray-200" />
 
-                {/* Feed Type List */}
+                {/* Feed Type List - Always rendered */}
                 <h2 className="text-2xl sm:text-3xl font-semibold text-gray-800 mb-4 text-center">
                     All Feed Types
                 </h2>
@@ -151,7 +175,25 @@ const FeedManagement = () => { // Renamed from App to FeedManagement
     );
 };
 
-// Component for the Feed Type Form (Add/Edit)
+// Generic Modal Component (no changes)
+const Modal = ({ children, onClose }) => {
+    return (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-75 flex items-center justify-center z-50 overflow-y-auto">
+            <div className="relative bg-white rounded-lg shadow-xl max-w-lg w-full p-6 mx-4 my-8">
+                <button
+                    onClick={onClose}
+                    className="absolute top-3 right-3 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+                    aria-label="Close modal"
+                >
+                    &times;
+                </button>
+                {children}
+            </div>
+        </div>
+    );
+};
+
+// Component for the Feed Type Form (Add/Edit) (no changes)
 const FeedTypeForm = ({ onSubmit, editingFeedType, onCancelEdit }) => {
     const initialState = {
         name: '',
@@ -163,7 +205,6 @@ const FeedTypeForm = ({ onSubmit, editingFeedType, onCancelEdit }) => {
     const [formData, setFormData] = useState(initialState);
     const [formErrors, setFormErrors] = useState({});
 
-    // Populate form if editing an existing feed type
     useEffect(() => {
         if (editingFeedType) {
             setFormData({
@@ -175,9 +216,9 @@ const FeedTypeForm = ({ onSubmit, editingFeedType, onCancelEdit }) => {
                 notes: editingFeedType.notes || ''
             });
         } else {
-            setFormData(initialState); // Reset form for new feed type
+            setFormData(initialState);
         }
-        setFormErrors({}); // Clear errors on edit/new form load
+        setFormErrors({});
     }, [editingFeedType]);
 
     const handleChange = (e) => {
@@ -188,10 +229,9 @@ const FeedTypeForm = ({ onSubmit, editingFeedType, onCancelEdit }) => {
     const validateForm = () => {
         let errors = {};
         if (!formData.name.trim()) errors.name = "Feed type name is required.";
-        // Validate numeric fields only if they are not empty
-        if (formData.dry_matter_percent !== '' && (isNaN(formData.dry_matter_percent) || parseFloat(formData.dry_matter_percent) < 0)) errors.dry_matter_percent = "Must be a non-negative number.";
-        if (formData.crude_protein_percent !== '' && (isNaN(formData.crude_protein_percent) || parseFloat(formData.crude_protein_percent) < 0)) errors.crude_protein_percent = "Must be a non-negative number.";
-        if (formData.metabolizable_energy_mj_kg !== '' && (isNaN(formData.metabolizable_energy_mj_kg) || parseFloat(formData.metabolizable_energy_mj_kg) < 0)) errors.metabolizable_energy_mj_kg = "Must be a non-negative number.";
+        if (formData.dry_matter_percent !== '' && (isNaN(parseFloat(formData.dry_matter_percent)) || parseFloat(formData.dry_matter_percent) < 0)) errors.dry_matter_percent = "Must be a non-negative number.";
+        if (formData.crude_protein_percent !== '' && (isNaN(parseFloat(formData.crude_protein_percent)) || parseFloat(formData.crude_protein_percent) < 0)) errors.crude_protein_percent = "Must be a non-negative number.";
+        if (formData.metabolizable_energy_mj_kg !== '' && (isNaN(parseFloat(formData.metabolizable_energy_mj_kg)) || parseFloat(formData.metabolizable_energy_mj_kg) < 0)) errors.metabolizable_energy_mj_kg = "Must be a non-negative number.";
 
         setFormErrors(errors);
         return Object.keys(errors).length === 0;
@@ -200,18 +240,18 @@ const FeedTypeForm = ({ onSubmit, editingFeedType, onCancelEdit }) => {
     const handleSubmit = (e) => {
         e.preventDefault();
         if (validateForm()) {
-            // Convert empty strings to null for numeric fields before submission
             const dataToSubmit = { ...formData };
-            if (dataToSubmit.dry_matter_percent === '') dataToSubmit.dry_matter_percent = null;
-            if (dataToSubmit.crude_protein_percent === '') dataToSubmit.crude_protein_percent = null;
-            if (dataToSubmit.metabolizable_energy_mj_kg === '') dataToSubmit.metabolizable_energy_mj_kg = null;
+            dataToSubmit.dry_matter_percent = dataToSubmit.dry_matter_percent === '' ? null : parseFloat(dataToSubmit.dry_matter_percent);
+            dataToSubmit.crude_protein_percent = dataToSubmit.crude_protein_percent === '' ? null : parseFloat(dataToSubmit.crude_protein_percent);
+            dataToSubmit.metabolizable_energy_mj_kg = dataToSubmit.metabolizable_energy_mj_kg === '' ? null : parseFloat(dataToSubmit.metabolizable_energy_mj_kg);
+            dataToSubmit.notes = dataToSubmit.notes === '' ? null : dataToSubmit.notes;
 
             onSubmit(dataToSubmit);
         }
     };
 
     return (
-        <form onSubmit={handleSubmit} className="p-6 border border-gray-200 rounded-lg shadow-sm bg-gray-50">
+        <form onSubmit={handleSubmit} className="p-6">
             <h3 className="text-xl font-bold text-gray-700 mb-6 text-center">
                 {editingFeedType ? 'Edit Feed Type' : 'Add New Feed Type'}
             </h3>
@@ -307,15 +347,13 @@ const FeedTypeForm = ({ onSubmit, editingFeedType, onCancelEdit }) => {
             </div>
 
             <div className="flex justify-end space-x-4 mt-6">
-                {editingFeedType && (
-                    <button
-                        type="button"
-                        onClick={onCancelEdit}
-                        className="px-6 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
-                    >
-                        Cancel
-                    </button>
-                )}
+                <button
+                    type="button"
+                    onClick={onCancelEdit}
+                    className="px-6 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
+                >
+                    Cancel
+                </button>
                 <button
                     type="submit"
                     className="px-6 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
@@ -327,7 +365,7 @@ const FeedTypeForm = ({ onSubmit, editingFeedType, onCancelEdit }) => {
     );
 };
 
-// Component for the Feed Type List
+// Component for the Feed Type List (no changes)
 const FeedTypeList = ({ feedTypes, onEdit, onDelete }) => {
     return (
         <div className="overflow-x-auto relative shadow-md sm:rounded-lg">
@@ -370,4 +408,4 @@ const FeedTypeList = ({ feedTypes, onEdit, onDelete }) => {
     );
 };
 
-export default FeedManagement; // Changed default export to FeedManagement
+export default FeedManagement;
